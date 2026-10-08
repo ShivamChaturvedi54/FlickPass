@@ -1,0 +1,88 @@
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const prisma = require('../services/prismaClient');
+
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
+  try {
+    const { email, name, password } = req.body;
+
+    if (!email || !name || !password) {
+      return res.status(400).json({ success: false, message: 'All fields required' });
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Email already registered' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+      data: { email, name, passwordHash },
+    });
+
+    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    res.status(201).json({
+      success: true,
+      data: { token, user: { id: user.id, email: user.email, name: user.name } },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
+  }
+});
+
+// POST /api/auth/login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    res.json({
+      success: true,
+      data: { token, user: { id: user.id, email: user.email, name: user.name } },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Login failed', error: error.message });
+  }
+});
+
+// POST /api/auth/demo-login - Quick demo login
+router.post('/demo-login', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: 'demo@flickpass.com' } });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Demo user not found. Run npm run seed first.' });
+    }
+
+    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    res.json({
+      success: true,
+      data: { token, user: { id: user.id, email: user.email, name: user.name } },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Demo login failed', error: error.message });
+  }
+});
+
+module.exports = router;

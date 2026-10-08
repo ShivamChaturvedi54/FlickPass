@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  bookings     Booking[]
+
+  @@map("users")
+}
+
+model Movie {
+  id           String   @id @default(uuid())
+  tmdbId       Int      @unique
+  title        String
+  overview     String
+  durationMins Int
+  posterUrl    String?
+  backdropUrl  String?
+  releaseDate  DateTime?
+  genres       String[] 
+  rating       Float?
+  language     String?  @default("en")
+  shows        Show[]
+  createdAt    DateTime @default(now())
+
+  @@map("movies")
+}
+
+model Theater {
+  id           String @id @default(uuid())
+  name         String
+  location     String
+  totalScreens Int    @default(1)
+  shows        Show[]
+
+  @@map("theaters")
+}
+
+model Show {
+  id            String   @id @default(uuid())
+  movieId       String
+  theaterId     String
+  screenNumber  Int
+  startTime     DateTime
+  endTime       DateTime
+  priceStandard Float    @default(250.00)
+  priceVip      Float    @default(500.00)
+  isActive      Boolean  @default(true)
+  movie         Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  theater       Theater  @relation(fields: [theaterId], references: [id], onDelete: Cascade)
+  seats         Seat[]
+  bookings      Booking[]
+  createdAt     DateTime @default(now())
+
+  @@map("shows")
+}
+
+model Seat {
+  id          String       @id @default(uuid())
+  showId      String
+  rowLabel    String
+  seatNumber  Int
+  category    SeatCategory @default(STANDARD)
+  isReserved  Boolean      @default(false)
+  show        Show         @relation(fields: [showId], references: [id], onDelete: Cascade)
+  bookingSeats BookingSeat[]
+
+  @@unique([showId, rowLabel, seatNumber])
+  @@map("seats")
+}
+
+model Booking {
+  id          String        @id @default(uuid())
+  userId      String
+  showId      String
+  totalAmount Float
+  status      BookingStatus @default(LOCKED)
+  qrCodeHash  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id])
+  show        Show          @relation(fields: [showId], references: [id])
+  seats       BookingSeat[]
+
+  @@map("bookings")
+}
+
+model BookingSeat {
+  id        String  @id @default(uuid())
+  bookingId String
+  seatId    String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seat      Seat    @relation(fields: [seatId], references: [id])
+
+  @@unique([bookingId, seatId])
+  @@map("booking_seats")
+}
+
+enum SeatCategory {
+  STANDARD
+  VIP
+}
+
+enum BookingStatus {
+  LOCKED
+  CONFIRMED
+  CANCELLED
+}
