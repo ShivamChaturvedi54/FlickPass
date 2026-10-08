@@ -322,6 +322,20 @@ npm run dev
 
 ---
 
+### Deploying the full app to Vercel
+
+The repository is configured as a single Vercel project: Vercel builds the frontend from `frontend/` and runs the Express API as a serverless function from `api/index.js`. The API does not run as a process on your computer, so it remains available when you close your browser or IDE.
+
+1. Import the repository into Vercel and set **Root Directory** to the repository root (not `frontend` or `backend`).
+2. Use the repository's `npm run build` build command and `frontend/dist` output directory. These are also set in `vercel.json`.
+3. Leave `VITE_API_URL` unset for this single-project deployment. The frontend then sends requests to `/api` on the same Vercel domain. If an old `VITE_API_URL` points to `localhost`, remove it from Vercel's environment variables and redeploy.
+4. Set a strong, private `JWT_SECRET` in Vercel's environment variables. For persistent accounts and bookings, also configure a hosted PostgreSQL database using `DATABASE_URL`; serverless `/tmp` storage is temporary and is not a durable database.
+5. Deploy the project, then verify the API at `https://<your-domain>/api/health`.
+
+For local development, continue running both services with `npm run dev`; the Vite development server proxies `/api` to `http://localhost:5000`.
+
+---
+
 ## 📡 API Documentation
 
 ### 🔐 Auth Endpoints (`/api/auth`)

@@ -63,13 +63,8 @@ async function getRedisClient() {
     const client = createClient({
       url: process.env.REDIS_URL || 'redis://localhost:6379',
       socket: {
-        connectTimeout: 1000,
-        reconnectStrategy: (retries) => {
-          if (retries > 2) {
-            return false; // Stop reconnecting and use fallback
-          }
-          return 1000;
-        },
+        connectTimeout: 800,
+        reconnectStrategy: false, // Clean fallback to in-memory store if Redis is not running
       },
     });
 
@@ -78,6 +73,7 @@ async function getRedisClient() {
         console.warn('⚠️ Redis error:', err.message);
       }
       isConnected = false;
+      redisClient = null;
     });
 
     client.on('connect', () => {
@@ -91,6 +87,7 @@ async function getRedisClient() {
   } catch (err) {
     console.log('ℹ️  Redis server not reachable, using resilient in-memory seat lock manager.');
     isConnected = false;
+    redisClient = null;
     return null;
   }
 }

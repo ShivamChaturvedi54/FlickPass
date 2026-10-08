@@ -4,6 +4,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../services/prismaClient');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'flickpass_super_secret_jwt_key_2024';
+
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
@@ -23,7 +25,7 @@ router.post('/register', async (req, res) => {
       data: { email, name, passwordHash },
     });
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: '7d',
     });
 
@@ -51,7 +53,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: '7d',
     });
 
@@ -72,7 +74,7 @@ router.post('/demo-login', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Demo user not found. Run npm run seed first.' });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: '7d',
     });
 

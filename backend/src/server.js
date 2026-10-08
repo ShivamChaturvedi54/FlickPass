@@ -1,3 +1,5 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -5,10 +7,11 @@ const cors = require('cors');
 const app = express();
 
 // Middleware
-// Dynamic CORS configuration (supports localhost, custom FRONTEND_URL, and Vercel domains)
+// Dynamic CORS configuration (supports localhost, IPv6, custom FRONTEND_URL, and Vercel domains)
 const isAllowedOrigin = (origin) => {
   if (!origin) return true; // Server-to-server, curl, same-origin
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+  if (process.env.NODE_ENV !== 'production') return true; // Fully permissive during local development
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin) || /^https?:\/\/\[::1\](:\d+)?$/.test(origin)) {
     return true;
   }
   if (/\.vercel\.app$/.test(origin)) {
@@ -106,7 +109,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 if (require.main === module || !process.env.VERCEL) {
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 FlickPass API Server running on http://localhost:${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🎬 Movies API:  http://localhost:${PORT}/api/movies\n`);

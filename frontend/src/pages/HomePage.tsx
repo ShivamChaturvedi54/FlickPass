@@ -208,7 +208,7 @@ export default function HomePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
 
   // Live search query without requiring separate search submit button
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['movies', searchInput, activeCategory],
     queryFn: () =>
       moviesApi.getAll({
@@ -216,6 +216,9 @@ export default function HomePage() {
         status: activeCategory === 'ALL' ? undefined : activeCategory,
         limit: 40,
       }),
+    retry: 3,
+    retryDelay: (attempt) => Math.min(attempt * 1000, 3000),
+    refetchInterval: (query) => (query.state.status === 'error' ? 4000 : false),
   })
 
   let movies: Movie[] = data?.data || []
@@ -509,9 +512,15 @@ export default function HomePage() {
           <div className="text-center py-24 glass rounded-3xl border border-white/5 p-8">
             <Film className="w-12 h-12 text-red-500/40 mx-auto mb-4" />
             <h3 className="font-display font-semibold text-xl text-white mb-2">Backend not connected</h3>
-            <p className="text-slate-400 text-sm max-w-sm mx-auto">
-              Please ensure the backend API server is running and accessible.
+            <p className="text-slate-400 text-sm max-w-sm mx-auto mb-5">
+              The API server is not responding. Please try again in a moment.
             </p>
+            <button
+              onClick={() => refetch()}
+              className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium text-sm transition-all shadow-lg shadow-red-600/30 active:scale-95 inline-flex items-center gap-2"
+            >
+              Retry Connection
+            </button>
           </div>
         ) : movies.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl border border-white/5 p-8">

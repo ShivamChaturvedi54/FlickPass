@@ -77,6 +77,21 @@ export default function Navbar() {
     }
   }
 
+  // Demo Login Handler
+  const handleDemoLogin = async () => {
+    setAuthLoading(true)
+    try {
+      const res = await authApi.demoLogin()
+      setAuth(res.data.user, res.data.token)
+      toast.success(`Welcome back, ${res.data.user.name}! 🎬`)
+      setAuthModalOpen(false)
+    } catch (err: any) {
+      toast.error(err.message || 'Demo login failed')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
   // Fetch user bookings when Tickets Modal opens
   const openTicketsModal = async () => {
     setTicketsModalOpen(true)
@@ -132,7 +147,7 @@ export default function Navbar() {
               </button>
 
               {/* User Account Menu (if authenticated) */}
-              {isAuthenticated && user && (
+              {isAuthenticated && user ? (
                 <div className="relative shrink-0" ref={userDropdownRef}>
                   <button
                     onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -173,6 +188,30 @@ export default function Navbar() {
                       </div>
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDemoLogin}
+                    disabled={authLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 hover:border-amber-500/50 text-xs font-semibold text-amber-300 transition-all active:scale-95 shrink-0"
+                    id="nav-demo-login-btn"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Demo Login</span>
+                    <span className="sm:hidden">Demo</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthMode('signin')
+                      setAuthModalOpen(true)
+                    }}
+                    className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition-all shadow-md shadow-red-600/30 active:scale-95 shrink-0"
+                    id="nav-sign-in-btn"
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Sign In</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -288,6 +327,17 @@ export default function Navbar() {
                   : authMode === 'signin'
                   ? 'Sign In'
                   : 'Create Account'}
+              </button>
+
+              {/* Quick 1-Click Demo Login */}
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                disabled={authLoading}
+                className="w-full py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all mt-2 active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Instant Demo Login (No password needed)</span>
               </button>
             </form>
 

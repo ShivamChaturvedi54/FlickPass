@@ -490,7 +490,21 @@ function getDefaultData() {
 class LocalDatabase {
   constructor() {
     this.data = null;
+    this._saveTimeout = null;
     this.init();
+
+    const flushSync = () => {
+      if (this._saveTimeout) {
+        clearTimeout(this._saveTimeout);
+        this._saveTimeout = null;
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf8');
+        } catch (e) {}
+      }
+    };
+    process.on('SIGINT', flushSync);
+    process.on('SIGTERM', flushSync);
+    process.on('beforeExit', flushSync);
   }
 
   init() {
@@ -513,16 +527,33 @@ class LocalDatabase {
     if (needReset) {
       console.log('🔄 Seeding rich catalog with 10 Now Playing and 6 Upcoming movies...');
       this.data = getDefaultData();
-      this.save();
+      this.save(true);
     }
   }
 
-  save() {
-    try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf8');
-    } catch (err) {
-      console.error('Error saving local DB:', err.message);
+  save(immediate = false) {
+    if (immediate) {
+      if (this._saveTimeout) {
+        clearTimeout(this._saveTimeout);
+        this._saveTimeout = null;
+      }
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf8');
+      } catch (err) {
+        console.error('Error saving local DB:', err.message);
+      }
+      return;
     }
+
+    if (this._saveTimeout) {
+      clearTimeout(this._saveTimeout);
+    }
+    this._saveTimeout = setTimeout(() => {
+      this._saveTimeout = null;
+      fs.writeFile(DB_FILE, JSON.stringify(this.data, null, 2), 'utf8', (err) => {
+        if (err) console.error('Error saving local DB:', err.message);
+      });
+    }, 300);
   }
 
   get user() {

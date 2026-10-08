@@ -4,7 +4,7 @@
   "description": "FlickPass Movie Ticket Booking API",
   "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
+    "dev": "nodemon --watch src --ignore data/ src/server.js",
     "start": "node src/server.js",
     "seed": "node prisma/seed.js",
     "db:generate": "node node_modules/prisma/dist/prisma.js generate",
