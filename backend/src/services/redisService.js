@@ -42,7 +42,7 @@ function memoryTTL(key) {
 }
 
 // Clean up expired items periodically
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, item] of memoryStore.entries()) {
     if (now > item.expiresAt) {
@@ -50,6 +50,9 @@ setInterval(() => {
     }
   }
 }, 10000);
+if (cleanupTimer.unref) {
+  cleanupTimer.unref();
+}
 
 async function getRedisClient() {
   if (isConnected && redisClient) return redisClient;

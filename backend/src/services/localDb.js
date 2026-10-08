@@ -3,11 +3,18 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 
-const DB_FILE = path.join(__dirname, '../../data/flickpass_db.json');
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DB_FILE = isServerless
+  ? path.join('/tmp', 'flickpass_db.json')
+  : path.join(__dirname, '../../data/flickpass_db.json');
 
-const dataDir = path.dirname(DB_FILE);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+try {
+  const dataDir = path.dirname(DB_FILE);
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+} catch (e) {
+  // Ignore filesystem errors in serverless containers
 }
 
 function getDefaultData() {
