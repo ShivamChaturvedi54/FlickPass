@@ -5,21 +5,32 @@ const cors = require('cors');
 const app = express();
 
 // Middleware
+// Dynamic CORS configuration (supports localhost, custom FRONTEND_URL, and Vercel domains)
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // Server-to-server, curl, same-origin
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+    return true;
+  }
+  if (/\.vercel\.app$/.test(origin)) {
+    return true;
+  }
+  if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL.replace(/\/$/, '')) {
+    return true;
+  }
+  return false;
+};
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow same-origin, local tools, Vercel deployments, or configured FRONTEND_URL
-    if (!origin) return callback(null, true);
-    if (
-      !process.env.FRONTEND_URL ||
-      origin === process.env.FRONTEND_URL ||
-      origin.endsWith('.vercel.app') ||
-      origin.includes('localhost')
-    ) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
-    return callback(null, true);
+    console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -80,8 +91,16 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  if (err && err.message && err.message.includes('not allowed by CORS')) {
+    return res.status(403).json({ success: false, message: err.message });
+  }
+  console.error('[UNHANDLED ERROR]', err);
+  const isDev = process.env.NODE_ENV === 'development';
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    ...(isDev && { error: err.message }),
+  });
 });
 
 const PORT = process.env.PORT || 5000;

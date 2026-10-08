@@ -510,7 +510,7 @@ export default function HomePage() {
             <Film className="w-12 h-12 text-red-500/40 mx-auto mb-4" />
             <h3 className="font-display font-semibold text-xl text-white mb-2">Backend not connected</h3>
             <p className="text-slate-400 text-sm max-w-sm mx-auto">
-              Please ensure the backend API is running at <code className="text-red-400">http://localhost:5000</code>.
+              Please ensure the backend API server is running and accessible.
             </p>
           </div>
         ) : movies.length === 0 ? (

@@ -1,9 +1,13 @@
 import axios from 'axios'
 
+const rawApiUrl = import.meta.env.VITE_API_URL
+const baseURL = rawApiUrl ? `${rawApiUrl.replace(/\/$/, '')}/api` : '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 
 // Auth token injection
