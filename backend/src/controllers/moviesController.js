@@ -1,45 +1,30 @@
-const prisma = require('../services/prismaClient');
+const firestoreService = require('../services/firestoreService');
 const tmdbService = require('../services/tmdbService');
 
 const moviesController = {
   /**
    * GET /api/movies
-   * Fetch all currently playing movies from local DB
+   * Fetch movies from Firestore
    */
   async getMovies(req, res) {
     try {
       const { search, genre, status, page = 1, limit = 20 } = req.query;
-      const skip = (parseInt(page) - 1) * parseInt(limit);
 
-      const where = {};
-      if (status) {
-        where.status = status;
-      }
-      if (search) {
-        where.title = { contains: search, mode: 'insensitive' };
-      }
-
-      const [movies, total] = await Promise.all([
-        prisma.movie.findMany({
-          where,
-          skip,
-          take: parseInt(limit),
-          orderBy: { createdAt: 'desc' },
-          include: {
-            _count: { select: { shows: true } },
-          },
-        }),
-        prisma.movie.count({ where }),
-      ]);
+      const result = await firestoreService.getMovies({
+        search,
+        status,
+        page,
+        limit,
+      });
 
       res.json({
         success: true,
-        data: movies,
+        data: result.movies,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total,
-          totalPages: Math.ceil(total / parseInt(limit)),
+          total: result.total,
+          totalPages: result.totalPages,
         },
       });
     } catch (error) {
@@ -50,62 +35,35 @@ const moviesController = {
 
   /**
    * GET /api/movies/:id
-   * Movie detail with cast info from TMDB and available showtimes
+   * Movie detail with cast info and available showtimes from Firestore
    */
   async getMovieById(req, res) {
     try {
       const { id } = req.params;
 
-      const movie = await prisma.movie.findUnique({
-        where: { id },
-        include: {
-          shows: {
-            where: {
-              startTime: { gte: new Date() },
-              isActive: true,
-            },
-            include: {
-              theater: true,
-              _count: { select: { seats: true } },
-            },
-            orderBy: { startTime: 'asc' },
-            take: 50,
-          },
-        },
-      });
+      const movie = await firestoreService.getMovieById(id);
 
       if (!movie) {
         return res.status(404).json({ success: false, message: 'Movie not found' });
       }
 
-      // Initialize with movie's stored values as fallback
+      // Initialize with stored values as baseline
       let cast = movie.cast || [];
       let director = movie.director || 'Unknown';
       let trailerUrl = movie.trailerUrl || null;
 
       try {
-        const [credits, videos] = await Promise.all([
-          tmdbService.getMovieCredits(movie.tmdbId),
-          tmdbService.getMovieVideos(movie.tmdbId),
-        ]);
-        if (credits && credits.cast && credits.cast.length > 0) cast = credits.cast;
-        if (credits && credits.director) director = credits.director;
-        if (videos && videos.trailer) trailerUrl = videos.trailer;
-      } catch (tmdbErr) {
-        // TMDB not available - smoothly fall back to verified seeded trailer & cast
-      }
-
-      // Group shows by theater and date
-      const showsByTheater = {};
-      for (const show of movie.shows) {
-        const theaterId = show.theaterId;
-        if (!showsByTheater[theaterId]) {
-          showsByTheater[theaterId] = {
-            theater: show.theater,
-            shows: [],
-          };
+        if (movie.tmdbId) {
+          const [credits, videos] = await Promise.all([
+            tmdbService.getMovieCredits(movie.tmdbId),
+            tmdbService.getMovieVideos(movie.tmdbId),
+          ]);
+          if (credits && credits.cast && credits.cast.length > 0) cast = credits.cast;
+          if (credits && credits.director) director = credits.director;
+          if (videos && videos.trailer) trailerUrl = videos.trailer;
         }
-        showsByTheater[theaterId].shows.push(show);
+      } catch (tmdbErr) {
+        // TMDB gracefully skipped
       }
 
       res.json({
@@ -115,7 +73,6 @@ const moviesController = {
           cast,
           director,
           trailerUrl,
-          showsByTheater: Object.values(showsByTheater),
         },
       });
     } catch (error) {

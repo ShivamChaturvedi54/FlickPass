@@ -1,12 +1,9 @@
-const { v4: uuidv4 } = require('uuid');
-const crypto = require('crypto');
-const prisma = require('../services/prismaClient');
-const redisService = require('../services/redisService');
+const firestoreService = require('../services/firestoreService');
 
 const bookingsController = {
   /**
    * POST /api/bookings/lock-seats
-   * Atomically lock 1-6 seats in Redis for 5 minutes
+   * Atomically lock 1-6 seats in Firestore for 5 minutes
    * Body: { showId, seatIds: [], userId }
    */
   async lockSeats(req, res) {
@@ -34,76 +31,20 @@ const bookingsController = {
         });
       }
 
-      // Verify show exists and seats belong to it
-      const seats = await prisma.seat.findMany({
-        where: {
-          id: { in: seatIds },
-          showId,
-          isReserved: false, // Must not be permanently reserved
-        },
-      });
-
-      if (seats.length !== seatIds.length) {
-        return res.status(409).json({
-          success: false,
-          message: 'One or more seats are already permanently reserved or do not exist',
-        });
-      }
-
-      // Attempt atomic lock in Redis
-      const lockResult = await redisService.lockSeats(showId, seatIds, userId);
+      const lockResult = await firestoreService.lockSeats(showId, seatIds, userId);
 
       if (!lockResult.success) {
         return res.status(409).json({
           success: false,
-          message: 'One or more seats are already temporarily locked by another user',
+          message: lockResult.message || 'One or more seats are already locked or reserved',
           conflictSeatId: lockResult.conflictSeatId,
         });
       }
 
-      // Calculate price
-      const show = await prisma.show.findUnique({
-        where: { id: showId },
-        select: { priceStandard: true, priceVip: true },
-      });
-
-      const pricing = seats.reduce(
-        (acc, seat) => {
-          if (seat.category === 'VIP') {
-            acc.vipCount++;
-            acc.total += show.priceVip;
-          } else {
-            acc.standardCount++;
-            acc.total += show.priceStandard;
-          }
-          return acc;
-        },
-        { total: 0, standardCount: 0, vipCount: 0 }
-      );
-
-      const bookingFee = parseFloat((pricing.total * 0.02).toFixed(2));
-      const grandTotal = parseFloat((pricing.total + bookingFee).toFixed(2));
-
-      const lockExpiresAt = new Date(Date.now() + 300 * 1000).toISOString();
-
       res.json({
         success: true,
         message: 'Seats locked for 5 minutes',
-        data: {
-          showId,
-          lockedSeats: seats,
-          pricing: {
-            standardSeats: pricing.standardCount,
-            vipSeats: pricing.vipCount,
-            standardPrice: show.priceStandard,
-            vipPrice: show.priceVip,
-            subtotal: pricing.total,
-            bookingFee,
-            total: grandTotal,
-          },
-          lockExpiresAt,
-          ttlSeconds: 300,
-        },
+        data: lockResult.data,
       });
     } catch (error) {
       console.error('lockSeats error:', error);
@@ -113,8 +54,8 @@ const bookingsController = {
 
   /**
    * POST /api/bookings/confirm
-   * Confirm booking using a DB transaction:
-   * BEGIN -> verify seats -> mark reserved -> create booking -> clear Redis -> COMMIT
+   * Confirm booking using an atomic Firestore transaction:
+   * Verify seats -> reserve seats -> create booking in Firestore -> clear locks
    * Body: { showId, seatIds, userId, paymentMethod }
    */
   async confirmBooking(req, res) {
@@ -128,108 +69,24 @@ const bookingsController = {
         });
       }
 
-      // Verify user holds Redis locks for these seats
-      const redisLocks = await redisService.getLockedSeats(showId);
-      for (const seatId of seatIds) {
-        if (redisLocks[seatId] !== userId) {
-          return res.status(409).json({
-            success: false,
-            message: 'Seat lock expired or not held by this user. Please select seats again.',
-          });
-        }
-      }
-
-      // Execute PostgreSQL transaction
-      const booking = await prisma.$transaction(async (tx) => {
-        // 1. Verify seats are still not reserved (double-check)
-        const seats = await tx.seat.findMany({
-          where: {
-            id: { in: seatIds },
-            showId,
-            isReserved: false,
-          },
-        });
-
-        if (seats.length !== seatIds.length) {
-          throw new Error('SEATS_ALREADY_RESERVED');
-        }
-
-        // 2. Verify user exists
-        const user = await tx.user.findUnique({ where: { id: userId } });
-        if (!user) {
-          // Create a guest user for demo purposes
-          throw new Error('USER_NOT_FOUND');
-        }
-
-        // 3. Fetch show pricing
-        const show = await tx.show.findUnique({
-          where: { id: showId },
-          select: { priceStandard: true, priceVip: true },
-        });
-
-        // 4. Calculate total
-        const total = seats.reduce((sum, seat) => {
-          return sum + (seat.category === 'VIP' ? show.priceVip : show.priceStandard);
-        }, 0);
-        const bookingFee = total * 0.02;
-        const grandTotal = parseFloat((total + bookingFee).toFixed(2));
-
-        // 5. Generate QR hash
-        const qrPayload = {
-          bookingId: uuidv4(),
-          userId,
-          showId,
-          seatIds,
-          totalAmount: grandTotal,
-          timestamp: Date.now(),
-        };
-        const qrCodeHash = crypto
-          .createHash('sha256')
-          .update(JSON.stringify(qrPayload))
-          .digest('hex');
-
-        // 6. Create booking record
-        const newBooking = await tx.booking.create({
-          data: {
-            userId,
-            showId,
-            totalAmount: grandTotal,
-            status: 'CONFIRMED',
-            qrCodeHash,
-          },
-        });
-
-        // 7. Create booking seat records
-        await tx.bookingSeat.createMany({
-          data: seatIds.map((seatId) => ({
-            bookingId: newBooking.id,
-            seatId,
-          })),
-        });
-
-        // 8. Mark seats as permanently reserved
-        await tx.seat.updateMany({
-          where: { id: { in: seatIds } },
-          data: { isReserved: true },
-        });
-
-        return { booking: newBooking, qrPayload, seats, show, grandTotal };
+      const result = await firestoreService.confirmBooking({
+        showId,
+        seatIds,
+        userId,
+        paymentMethod,
       });
-
-      // 9. Clear Redis locks after successful transaction
-      await redisService.releaseSeats(showId, seatIds);
 
       res.json({
         success: true,
         message: 'Booking confirmed successfully!',
         data: {
-          bookingId: booking.booking.id,
+          bookingId: result.booking.id,
           status: 'CONFIRMED',
-          qrCodeHash: booking.booking.qrCodeHash,
-          qrPayload: booking.qrPayload,
-          totalAmount: booking.grandTotal,
-          seats: booking.seats,
-          createdAt: booking.booking.createdAt,
+          qrCodeHash: result.booking.qrCodeHash,
+          qrPayload: result.booking.qrPayload,
+          totalAmount: result.grandTotal,
+          seats: result.seats,
+          createdAt: result.booking.createdAt,
         },
       });
     } catch (error) {
@@ -238,12 +95,16 @@ const bookingsController = {
       if (error.message === 'SEATS_ALREADY_RESERVED') {
         return res.status(409).json({
           success: false,
-          message: 'One or more seats were reserved by another transaction. Please select different seats.',
+          message: 'One or more seats were already reserved. Please select different seats.',
         });
       }
 
       if (error.message === 'USER_NOT_FOUND') {
         return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      if (error.message === 'SHOW_NOT_FOUND') {
+        return res.status(404).json({ success: false, message: 'Show not found' });
       }
 
       res.status(500).json({
@@ -256,12 +117,14 @@ const bookingsController = {
 
   /**
    * POST /api/bookings/release-seats
-   * Release Redis locks (when user navigates away)
+   * Release seat locks in Firestore
    */
   async releaseSeats(req, res) {
     try {
       const { showId, seatIds } = req.body;
-      await redisService.releaseSeats(showId, seatIds);
+      if (showId && Array.isArray(seatIds)) {
+        await firestoreService.releaseSeats(showId, seatIds);
+      }
       res.json({ success: true, message: 'Seats released' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Failed to release seats' });
@@ -270,26 +133,12 @@ const bookingsController = {
 
   /**
    * GET /api/bookings/:id
-   * Get booking details
+   * Get booking details from Firestore
    */
   async getBookingById(req, res) {
     try {
       const { id } = req.params;
-      const booking = await prisma.booking.findUnique({
-        where: { id },
-        include: {
-          show: {
-            include: {
-              movie: true,
-              theater: true,
-            },
-          },
-          seats: {
-            include: { seat: true },
-          },
-          user: { select: { id: true, name: true, email: true } },
-        },
-      });
+      const booking = await firestoreService.getBookingById(id);
 
       if (!booking) {
         return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -303,24 +152,12 @@ const bookingsController = {
 
   /**
    * GET /api/bookings/user/:userId
-   * Get all bookings for a user
+   * Get all bookings for a user from Firestore
    */
   async getUserBookings(req, res) {
     try {
       const { userId } = req.params;
-      const bookings = await prisma.booking.findMany({
-        where: { userId },
-        include: {
-          show: {
-            include: {
-              movie: { select: { title: true, posterUrl: true } },
-              theater: { select: { name: true, location: true } },
-            },
-          },
-          seats: { include: { seat: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      const bookings = await firestoreService.getUserBookings(userId);
 
       res.json({ success: true, data: bookings });
     } catch (error) {

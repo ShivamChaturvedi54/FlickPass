@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const prisma = require('../services/prismaClient');
+const firestoreService = require('../services/firestoreService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'flickpass_super_secret_jwt_key_2024';
 
@@ -15,15 +15,13 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'All fields required' });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await firestoreService.findUserByEmail(email);
     if (existing) {
       return res.status(409).json({ success: false, message: 'Email already registered' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: { email, name, passwordHash },
-    });
+    const user = await firestoreService.createUser({ email, name, passwordHash });
 
     const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: '7d',
@@ -43,7 +41,11 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password required' });
+    }
+
+    const user = await firestoreService.findUserByEmail(email);
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -69,9 +71,16 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/demo-login - Quick demo login
 router.post('/demo-login', async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { email: 'demo@flickpass.com' } });
+    await firestoreService.seedIfEmpty();
+    let user = await firestoreService.findUserByEmail('demo@flickpass.com');
+
     if (!user) {
-      return res.status(404).json({ success: false, message: 'Demo user not found. Run npm run seed first.' });
+      const passwordHash = await bcrypt.hash('demo123', 10);
+      user = await firestoreService.createUser({
+        email: 'demo@flickpass.com',
+        name: 'Demo User',
+        passwordHash,
+      });
     }
 
     const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, {

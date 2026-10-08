@@ -3,8 +3,15 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { db, isEmulated } = require('./services/firebase');
+const firestoreService = require('./services/firestoreService');
 
 const app = express();
+
+// Seed initial data into Firestore if empty
+firestoreService.seedIfEmpty().catch((err) => {
+  console.warn('⚠️ Auto-seed check notice:', err.message);
+});
 
 // Middleware
 // Dynamic CORS configuration (supports localhost, IPv6, custom FRONTEND_URL, and Vercel domains)
@@ -57,32 +64,23 @@ app.use(['/api/bookings', '/bookings'], bookingsRoutes);
 
 // Health check
 app.get(['/api/health', '/health'], async (req, res) => {
-  const redisService = require('./services/redisService');
-  const prisma = require('./services/prismaClient');
-
-  let dbStatus = 'disconnected';
-  let redisStatus = 'disconnected';
-
+  let firestoreStatus = 'connected';
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    dbStatus = 'connected';
+    const testDoc = await db.collection('movies').limit(1).get();
+    firestoreStatus = testDoc ? 'connected' : 'empty';
   } catch (e) {
-    dbStatus = `error: ${e.message}`;
-  }
-
-  try {
-    const redisPing = await redisService.ping();
-    redisStatus = redisPing ? 'connected' : 'disconnected';
-  } catch (e) {
-    redisStatus = `error: ${e.message}`;
+    firestoreStatus = `error: ${e.message}`;
   }
 
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     services: {
-      database: dbStatus,
-      redis: redisStatus,
+      database: 'firebase_firestore',
+      firebase: {
+        status: firestoreStatus,
+        emulated: isEmulated,
+      },
     },
   });
 });
@@ -110,7 +108,7 @@ const PORT = process.env.PORT || 5000;
 
 if (require.main === module || !process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 FlickPass API Server running on http://localhost:${PORT}`);
+    console.log(`\n🔥 FlickPass Firebase API Server running on http://localhost:${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🎬 Movies API:  http://localhost:${PORT}/api/movies\n`);
   });
