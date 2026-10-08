@@ -30,14 +30,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/movies', require('./routes/movies'));
-app.use('/api/shows', require('./routes/shows'));
-app.use('/api/bookings', require('./routes/bookings'));
+// Routes (mounted on both /api/* and root in case rewrites strip or keep /api prefix)
+const authRoutes = require('./routes/auth');
+const moviesRoutes = require('./routes/movies');
+const showsRoutes = require('./routes/shows');
+const bookingsRoutes = require('./routes/bookings');
+
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/movies', '/movies'], moviesRoutes);
+app.use(['/api/shows', '/shows'], showsRoutes);
+app.use(['/api/bookings', '/bookings'], bookingsRoutes);
 
 // Health check
-app.get('/api/health', async (req, res) => {
+app.get(['/api/health', '/health'], async (req, res) => {
   const redisService = require('./services/redisService');
   const prisma = require('./services/prismaClient');
 
